@@ -43,7 +43,10 @@ def _print_event(kind: str, payload) -> None:
         shown = result if len(result) <= 160 else result[:157] + "..."
         print(f"    [tool reply] {payload['name']}: {shown}")
     elif kind == "cache":
-        print(f"    [cache]  created={payload['creation']} read={payload['read']} tokens")
+        print(
+            f"    [cache]  created={payload['creation']} read={payload['read']} tokens"
+            "  (illustrative demo values — not measured)"
+        )
     elif kind == "injection_blocked":
         print("    [guard]  injection detected — model NOT called, safe reply returned")
     elif kind == "loop_exhausted":

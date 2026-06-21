@@ -99,6 +99,9 @@ class StubModelClient:
             "content": [
                 {"type": "tool_use", "id": self._next_tool_id(), "name": name, "input": tool_input}
             ],
+            # Illustrative demo values — not measured. The stub makes no API call,
+            # so there is no real token accounting; these constants only exercise
+            # the agent's cache-usage reporting path (agent._record_cache_usage).
             "usage": {"input_tokens": 1200, "output_tokens": 40, "cache_read_input_tokens": 0},
         }
 
@@ -107,6 +110,9 @@ def _end_turn(text: str) -> dict:
     return {
         "stop_reason": "end_turn",
         "content": [{"type": "text", "text": text}],
+        # Illustrative demo values — not measured. The stub makes no API call, so
+        # the `read=1100` figure is a scripted constant (the real Anthropic SDK
+        # path reports actual usage.cache_read_input_tokens instead).
         "usage": {"input_tokens": 1200, "output_tokens": 60, "cache_read_input_tokens": 1100},
     }
 

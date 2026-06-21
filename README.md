@@ -67,14 +67,14 @@ Mock business: Estudio Pilates Demo
     [tool reply] get_services: [{"service_id": 1, "name": "Pilates Reformer (individual)", ...
     [tool call ] get_available_slots({'service_id': 2, 'start_date': '2026-06-23'})
     [tool reply] get_available_slots: [{"slot_id": 110, "service_id": 2, "service_name": "Pilates Reformer (grupal)", "start": "2026-06-23T08:00", "professional": "Mateo"}, ...
-    [cache]  created=0 read=1100 tokens
+    [cache]  created=0 read=1100 tokens  (illustrative demo values — not measured)
 [Asistente] ¡Buenísimo! Para Reformer grupal tengo el slot 110 el 2026-06-23 a las 08:00
             con Mateo. ¿Te lo reservo? Pasame tu nombre así lo confirmo. 😊
 
 [Cliente] Perfecto, soy Lucía
     [tool call ] create_appointment({'slot_id': 110, 'client_name': 'Lucía'})
     [tool reply] create_appointment: {"appointment_id": 9001, "service_name": "Pilates Reformer (grupal)", "start": "2026-06-23T08:00", "professional": "Mateo", ...
-    [cache]  created=0 read=1100 tokens
+    [cache]  created=0 read=1100 tokens  (illustrative demo values — not measured)
 [Asistente] ¡Listo, Lucía! Te reservé Pilates Reformer (grupal) el 2026-06-23 a las 08:00
             con Mateo. Tu número de turno es 9001. ¡Nos vemos! 💪
 
@@ -177,6 +177,13 @@ tools + system cache as a single prefix). The prefix is kept byte-frozen — no
 timestamps or per-request IDs in it — so the cache actually hits across turns. The loop
 reads `usage.cache_read_input_tokens` to confirm hits (visible as `[cache] read=…` in the
 transcript). On a real deployment this is a large cost saver on multi-turn conversations.
+
+> **Note on the dry-run numbers:** the `[cache] read=1100` figures in the transcript above
+> are **scripted illustrative values** so the demo runs keyless and at $0. The
+> `cache_control` wiring is the real Anthropic shape (`{"type": "ephemeral"}` on the stable
+> system/tools prefix), but the dry run makes **no live API call**, so nothing is measured
+> or billed. Real token counts come from `usage.cache_read_input_tokens` only on the live
+> Anthropic SDK path.
 
 ### Structured tool I/O
 
