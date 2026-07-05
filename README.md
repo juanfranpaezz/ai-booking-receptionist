@@ -1,8 +1,8 @@
 # AI Booking Receptionist — a Claude tool-use agent
 
-> A production-grade **Claude tool-use agent** that books appointment slots through
+> A **Claude tool-use agent** that books appointment slots through
 > natural conversation — with prompt-injection defense, prompt caching, structured
-> tool I/O, and a deterministic eval harness.
+> tool I/O, and a deterministic 7-case eval set (cases defined; no runner in this extract).
 >
 > This is a **sanitized, self-contained extract** of the AI layer of a real product
 > ([VINDA](https://github.com/juanfranpaezz/Vinda), a WhatsApp appointment-booking
@@ -201,16 +201,24 @@ This repo is a **pattern showcase**, not the product. Deliberately:
 **Reproduced (the interesting engineering):**
 - The full Claude tool-use agentic loop, with the iteration bound and stop-condition handling.
 - All 6 booking tools and their exact JSON-Schema shapes.
-- The 4-layer injection defense (pre-filter, stored-data sanitizer, prompt rules, tool allow-list).
+- The 2 code-layer injection defense — a ~19-pattern incoming-message pre-filter + an idempotent
+  stored-data sanitizer, both unit-tested — backed by immutable system-prompt rules and a tool
+  allow-list. (The module's own docstring notes only these two layers are shown standalone here.)
 - Prompt caching (frozen prefix + `cache_control` breakpoints + hit verification).
 - Per-tool ownership enforcement (caller identity from the trusted session).
-- The deterministic, no-LLM-judge eval design.
+- The deterministic, no-LLM-judge eval design — **7 cases defined** here (`evals/cases.json`).
+  This public extract ships the cases but **no runner**, so 0 are executed against the real model;
+  the end-to-end 7/7-against-Claude result is self-reported by the private production system in its
+  own results doc, not claimed here. What runs green in this repo is the `pytest` suite — 7 smoke
+  tests over the loop + guards against the deterministic stub.
 
 **Left out (product / infra, not pattern):**
 - The real database and all multi-tenant company data → replaced by a **mock in-memory studio**.
 - The WhatsApp webhook plumbing, the Spring/Java service, the REST API, Docker/Prometheus/Grafana.
-- Operational guards that are config, not architecture: per-session/per-company rate limiting,
-  monthly cost caps, circuit breakers, cost-based model downgrade.
+- Guards that live in the **private production system** — real and code-backed there, deliberately
+  **not** reproduced in this public extract: per-tenant row-level isolation (multi-tenancy), a
+  per-company **$10/mo cost cap** enforced before each model call, a per-day-token → Haiku circuit
+  breaker, and per-session/per-company rate limiting.
 - Any commercial logic, pricing rules, or onboarding flows.
 
 **Zero secrets carried over.** The original carries no hardcoded secret either (the key is
