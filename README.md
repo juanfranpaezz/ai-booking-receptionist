@@ -1,11 +1,13 @@
-# AI Booking Receptionist — a Claude tool-use agent
+# AI Booking Receptionist — Python / Anthropic Messages API agent core
+
+**Bounded agentic tool-use loop, two-layer prompt-injection defense (both layers unit-tested), prompt caching and a deterministic no-LLM-judge eval set — extracted from a shipped WhatsApp booking product.**
 
 > A **Claude tool-use agent** that books appointment slots through
 > natural conversation — with prompt-injection defense, prompt caching, structured
 > tool I/O, and a deterministic 7-case eval set (cases defined; no runner in this extract).
 >
 > This is a **sanitized, self-contained extract** of the AI layer of a real product
-> ([VINDA](https://github.com/juanfranpaezz/Vinda), a WhatsApp appointment-booking
+> (VINDA, a private WhatsApp appointment-booking
 > platform). It runs **with no database and no API key** in `--dry-run` mode, so you
 > can see the whole agentic loop work end to end in one command.
 
@@ -55,6 +57,8 @@ python -m booking_receptionist        # interactive REPL
 ---
 
 ## Recorded transcript (verbatim `--dry-run` output)
+
+*The mock business and the scripted conversation are in Spanish; the code, the tests and this documentation are in English.*
 
 ```
 ========================================================================
