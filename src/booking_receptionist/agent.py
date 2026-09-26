@@ -28,7 +28,8 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Callable, Protocol
+from collections.abc import Callable
+from typing import Any, Protocol, cast
 
 from .booking_service import BookingService
 from .injection_guard import SAFE_REPLY, is_injection_attempt
@@ -56,10 +57,10 @@ class ModelClient(Protocol):
         *,
         model: str,
         max_tokens: int,
-        system: list[dict],
-        tools: list[dict],
-        messages: list[dict],
-    ) -> dict:
+        system: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        messages: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Return a response dict with keys: content (list of blocks), stop_reason, usage."""
         ...
 
@@ -79,7 +80,7 @@ class BookingAgent:
         self.service = service or BookingService()
         self.model = model
         self.session_phone = session_phone
-        self.messages: list[dict] = []
+        self.messages: list[dict[str, Any]] = []
         self._on_event = on_event or (lambda *_: None)
         # System prompt is built once and cached (stable prefix for prompt caching).
         self._system = [
@@ -106,7 +107,7 @@ class BookingAgent:
     # ---- the agentic loop ----------------------------------------------
 
     def _run_loop(self) -> str:
-        for iteration in range(MAX_ITERATIONS):
+        for _iteration in range(MAX_ITERATIONS):
             response = self.client.create_message(
                 model=self.model,
                 max_tokens=MAX_TOKENS,
@@ -164,7 +165,7 @@ class BookingAgent:
             "¿Querés que lo intentemos de nuevo?"
         )
 
-    def _record_cache_usage(self, usage: dict) -> None:
+    def _record_cache_usage(self, usage: dict[str, Any]) -> None:
         created = usage.get("cache_creation_input_tokens", 0)
         read = usage.get("cache_read_input_tokens", 0)
         if created or read:
@@ -173,10 +174,11 @@ class BookingAgent:
 
 # ---- helpers -----------------------------------------------------------
 
-def _first_text(content: list[dict]) -> str:
+def _first_text(content: list[dict[str, Any]]) -> str:
     for block in content:
         if block.get("type") == "text":
-            return block.get("text", "")
+            text = block.get("text", "")
+            return text if isinstance(text, str) else ""
     return ""
 
 
@@ -204,7 +206,7 @@ class AnthropicModelClient:
                 "to exercise the loop against the stubbed model (no key needed)."
             )
         try:
-            import anthropic  # noqa: F401
+            import anthropic
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError(
                 "The 'anthropic' package is not installed. Run "
@@ -219,16 +221,19 @@ class AnthropicModelClient:
         *,
         model: str,
         max_tokens: int,
-        system: list[dict],
-        tools: list[dict],
-        messages: list[dict],
-    ) -> dict:
+        system: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        messages: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        # The loop deliberately carries plain dicts (the same shape the REST API
+        # takes) rather than the SDK's TypedDicts, so the stub and the live client
+        # are interchangeable. The casts say exactly that and nothing more.
         response = self._client.messages.create(
             model=model,
             max_tokens=max_tokens,
-            system=system,
-            tools=tools,
-            messages=messages,
+            system=cast("Any", system),
+            tools=cast("Any", tools),
+            messages=cast("Any", messages),
         )
         # Normalize the SDK object into the plain dict shape the loop expects.
         return {
@@ -249,7 +254,7 @@ class AnthropicModelClient:
         }
 
 
-def _block_to_dict(block: Any) -> dict:
+def _block_to_dict(block: Any) -> dict[str, Any]:
     """Convert an SDK content block into the plain-dict form the loop appends.
 
     The dict must round-trip back to the API as an assistant content block, so we
@@ -267,5 +272,5 @@ def _block_to_dict(block: Any) -> dict:
         }
     # Fallback: best-effort serialization for any other block type.
     if hasattr(block, "model_dump"):
-        return block.model_dump()
-    return json.loads(json.dumps(block, default=str))
+        return cast("dict[str, Any]", block.model_dump())
+    return cast("dict[str, Any]", json.loads(json.dumps(block, default=str)))

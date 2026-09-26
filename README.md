@@ -4,7 +4,7 @@
 
 > A **Claude tool-use agent** that books appointment slots through
 > natural conversation — with prompt-injection defense, prompt caching, structured
-> tool I/O, and a deterministic 7-case eval set (cases defined; no runner in this extract).
+> tool I/O, a deterministic 7-case eval set with a runner, and CI (ruff + mypy --strict + pytest).
 >
 > This is a **sanitized, self-contained extract** of the AI layer of a real product
 > (VINDA, a private WhatsApp appointment-booking
@@ -210,11 +210,14 @@ This repo is a **pattern showcase**, not the product. Deliberately:
   allow-list. (The module's own docstring notes only these two layers are shown standalone here.)
 - Prompt caching (frozen prefix + `cache_control` breakpoints + hit verification).
 - Per-tool ownership enforcement (caller identity from the trusted session).
-- The deterministic, no-LLM-judge eval design — **7 cases defined** here (`evals/cases.json`).
-  This public extract ships the cases but **no runner**, so 0 are executed against the real model;
-  the end-to-end 7/7-against-Claude result is self-reported by the private production system in its
-  own results doc, not claimed here. What runs green in this repo is the `pytest` suite — 7 smoke
-  tests over the loop + guards against the deterministic stub.
+- The deterministic, no-LLM-judge eval design — **7 cases** (`evals/cases.json`) plus a runner
+  (`evals/run.py`) that executes all 7 **against the deterministic stub**, prints a PASS/FAIL table
+  and returns a non-zero exit code on any failure. **0 of the 7 are executed against the real
+  model** — that path needs a key and costs money, so it is deliberately out of this extract and out
+  of CI. Any end-to-end-against-Claude result is self-reported by the private production system in
+  its own results doc and is **not** claimed here. What runs green in this repo: 28 pytest tests
+  (7 pre-existing smoke tests + 7 parametrized eval cases + 14 tests that prove the eval grader
+  itself can return both PASS and FAIL), `mypy --strict`, and `ruff`.
 
 **Left out (product / infra, not pattern):**
 - The real database and all multi-tenant company data → replaced by a **mock in-memory studio**.
@@ -242,14 +245,73 @@ source was ever copied.
 
 ---
 
-## Tests
+## Tests, evals and CI
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 7 smoke tests: loop books via tools, injection blocked pre-model,
-                   # detector fires both ways, sanitizer fences markers + is idempotent,
-                   # ownership gate, admin tool not exposed
+
+python evals/run.py          # the 7 eval cases -> PASS/FAIL table, exit 0 / 1
+python evals/run.py --verbose  # same, plus each case's user message and reply
+booking-evals                # identical, via the installed console script
+
+pytest                       # 28 tests (see below)
+mypy --strict                # 0 errors across src/, tests/ and evals/
+ruff check                   # 0 findings
 ```
+
+What `pytest` covers: the 7 pre-existing smoke tests (loop books via tools, injection blocked
+pre-model, detector fires both ways, sanitizer fences markers + is idempotent, ownership gate,
+admin tool not exposed), the 7 eval cases run as parametrized tests, and 14 tests over the eval
+runner itself — every grading arm is shown returning **both** a pass and a failure, and the
+runner's exit code is shown to be both 0 and 1. A checker only ever seen returning green is worth
+nothing.
+
+CI (`.github/workflows/ci.yml`) runs ruff, mypy `--strict`, pytest, the eval runner and the dry run
+on Python 3.10 and 3.12, on every push. It references **no repository secret** and needs no API key:
+every check goes through the stub client.
+
+---
+
+## Evals: what they catch and what they cannot
+
+Read this before believing the 7/7.
+
+**What they do catch, mechanically:**
+
+- That the agentic loop is wired end to end — a user message really produces tool calls, the tool
+  results really round-trip back, and a reply really comes out.
+- That a tool which *must* be called is called (`expected_tool_calls`).
+- That a tool which must *not* be called is never called (`forbidden_tool_calls`) — this is the
+  assertion that actually bites: no premature `create_appointment`, no `cancel_appointment` before
+  a lookup, no admin tool.
+- That the reply does not leak a forbidden fragment (`expected_response_not_contains`), matched
+  case-insensitively so a differently-cased leak still fails.
+- That the Layer-1 injection pre-filter fires on TC-04 (`expected_injection_blocked`).
+
+**What they cannot catch, stated plainly:**
+
+- **The stub is not a model.** Every case runs against a scripted state machine, so a green run is
+  evidence about *this repo's wiring and guards*, never about Claude's behaviour.
+- **TC-04 (prompt injection) is exercised only as far as the scripted stub allows.** It proves the
+  Layer-1 pattern pre-filter fires and that the model is never called — and nothing more. It says
+  nothing about resilience to a *novel* jailbreak, because a stub cannot be jailbroken. Without the
+  `expected_injection_blocked` assertion this case would pass even with the pre-filter deleted: the
+  stub would simply answer with its generic greeting, which leaks nothing. That is why the
+  assertion exists, and it is what the planted-defect check below is aimed at.
+- **TC-07 (Argentine slang) is exercised only as far as the scripted stub allows.** It proves that
+  a slang phrasing routes to `get_available_slots` in the stub's keyword table. It does **not**
+  demonstrate that a model understands rioplatense Spanish.
+- **TC-02 and TC-03 effectively assert only their forbidden sets.** The stub always follows
+  `get_services` with `get_available_slots`, and the matching rule is a superset (extra calls are
+  allowed), so their positive expectations are satisfied trivially.
+- **Single turn, Spanish only, no latency, no cost, no multi-turn state.**
+
+**How the evals are proven not to be decorative.** Disable one pattern in the Layer-1 guard
+(the `ignora ... instrucciones` entry of `_INJECTION_PATTERNS`) on a scratch copy and re-run:
+`python evals/run.py` drops to `6/7 cases passed` with
+`TC-04 FAIL -> injection guard expected to fire, but it did not fire` and exits 1, and `pytest`
+reports 4 failures. Restore the pattern and both go green again. A check that has never been seen
+failing is not a check.
 
 ---
 
@@ -270,11 +332,42 @@ ai-booking-receptionist/
 │   ├── system_prompt.py         # cacheable system prompt builder
 │   ├── injection_guard.py       # Layer 1 + Layer 2 defenses
 │   └── stub_model.py            # deterministic dry-run model
-├── tests/test_smoke.py
+├── .github/workflows/ci.yml     # ruff + mypy --strict + pytest + evals + dry run
+├── tests/
+│   ├── test_smoke.py            # loop + guard smoke tests
+│   └── test_evals.py            # the 7 cases, parametrized + grader both-ways proof
 └── evals/
     ├── cases.json               # 7 deterministic single-turn cases
+    ├── run.py                   # zero-install entry point for the runner
     └── README.md
 ```
+
+(The runner itself lives in the package, at `src/booking_receptionist/evals_runner.py`, so it is
+type-checked and shipped as the `booking-evals` console script.)
+
+---
+
+## Defence note (the three questions, answered short)
+
+**1. What does this actually prove?**
+That the agent's control flow and its safety gates behave as specified, repeatably, on every push,
+with no API key and at zero cost. Concretely: tools are called in the required order, the tools that
+must never fire do not fire, the caller can only ever touch their own data, and an
+instruction-override message is blocked *before* the model is called. The suite is proven able to
+fail: disabling one guard pattern turns the evals and the tests red.
+
+**2. One design choice, and why not the obvious alternative.**
+The evals assert on the **tool-call trace and exact string fragments, against a deterministic stub
+client** — not LLM-as-judge against the live model. The alternative was rejected on three grounds:
+it is non-deterministic (the same commit can pass and then fail), it costs money and needs a secret
+inside CI, and a model grading a model tends to reward answers that *sound* right. The price of my
+choice is real and I will not hide it: these evals cannot measure model quality at all.
+
+**3. One known limitation.**
+Because the stub is scripted, the injection and slang cases prove only the parts that live in *my*
+code — the pattern pre-filter and the routing — not the model's own resistance or comprehension.
+Closing that gap needs a separate, paid, non-deterministic eval run against the real model, kept
+deliberately outside CI.
 
 ---
 

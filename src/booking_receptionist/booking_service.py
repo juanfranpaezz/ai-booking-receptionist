@@ -13,8 +13,9 @@ self-contained stub so the demo runs anywhere with zero setup.
 from __future__ import annotations
 
 import itertools
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
+from typing import Any, ClassVar
 
 
 @dataclass(frozen=True)
@@ -59,7 +60,7 @@ class BookingService:
     what a fresh run reproduces in --dry-run mode.
     """
 
-    COMPANY = {
+    COMPANY: ClassVar[dict[str, str]] = {
         "name": "Estudio Pilates Demo",
         "description": (
             "Estudio boutique de Pilates reformer y mat en Palermo, Buenos Aires. "
@@ -68,7 +69,11 @@ class BookingService:
         "phone": "+54 11 5555-0123",
         "email": "hola@pilatesdemo.example",
         "address": "Av. Demo 1234, Palermo, CABA",
-        "hours": "Lunes a viernes 8:00–20:00, sábados 9:00–13:00",
+        # RUF001 is suppressed on the next line only: the EN DASH is correct
+        # Spanish typography in an opening-hours range -- display text, not a
+        # homoglyph smuggle. The homoglyph check stays ON everywhere else,
+        # which matters in a repo whose subject is prompt injection.
+        "hours": "Lunes a viernes 8:00–20:00, sábados 9:00–13:00",  # noqa: RUF001
     }
 
     def __init__(self, today: date = DEMO_TODAY) -> None:
@@ -121,10 +126,10 @@ class BookingService:
 
     # ---- read operations (called by tools) -----------------------------
 
-    def get_company_info(self) -> dict:
+    def get_company_info(self) -> dict[str, str]:
         return dict(self.COMPANY)
 
-    def get_services(self) -> list[dict]:
+    def get_services(self) -> list[dict[str, Any]]:
         return [
             {
                 "service_id": s.service_id,
@@ -141,7 +146,7 @@ class BookingService:
         service_id: int | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Free slots, optionally filtered by service and date window.
 
         Dates are ISO strings (YYYY-MM-DD). With no window, returns the next
@@ -152,7 +157,7 @@ class BookingService:
         booked = {
             a.slot_id for a in self._appointments.values() if a.status == "confirmed"
         }
-        out = []
+        out: list[dict[str, Any]] = []
         for slot in self._slots.values():
             if slot.slot_id in booked:
                 continue
@@ -172,7 +177,9 @@ class BookingService:
         out.sort(key=lambda r: r["start"])
         return out
 
-    def get_client_appointments(self, client_name: str, client_phone: str) -> list[dict]:
+    def get_client_appointments(
+        self, client_name: str, client_phone: str
+    ) -> list[dict[str, Any]]:
         """Appointments owned by THIS caller only.
 
         Ownership is keyed on phone — the caller cannot read another client's
@@ -194,7 +201,7 @@ class BookingService:
         client_name: str,
         client_phone: str,
         client_email: str | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         slot = self._slots.get(slot_id)
         if slot is None:
             return {"error": "slot_not_found", "message": f"No existe el turno {slot_id}."}
@@ -217,7 +224,7 @@ class BookingService:
         self._appointments[appt.appointment_id] = appt
         return self._appt_dict(appt)
 
-    def cancel_appointment(self, appointment_id: int, client_phone: str) -> dict:
+    def cancel_appointment(self, appointment_id: int, client_phone: str) -> dict[str, Any]:
         appt = self._appointments.get(appointment_id)
         if appt is None:
             return {"error": "not_found", "message": f"No existe el turno {appointment_id}."}
@@ -229,7 +236,7 @@ class BookingService:
 
     # ---- helpers -------------------------------------------------------
 
-    def _appt_dict(self, a: Appointment) -> dict:
+    def _appt_dict(self, a: Appointment) -> dict[str, Any]:
         return {
             "appointment_id": a.appointment_id,
             "service_id": a.service_id,

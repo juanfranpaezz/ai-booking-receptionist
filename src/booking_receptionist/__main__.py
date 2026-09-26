@@ -11,21 +11,23 @@ Two modes:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
+from typing import Any
 
 # Print UTF-8 regardless of the console codepage (Windows defaults to cp1252,
 # which can't encode the Spanish text or the arrow glyphs below).
 for _stream in (sys.stdout, sys.stderr):
     reconfigure = getattr(_stream, "reconfigure", None)
     if reconfigure is not None:
-        try:
+        with contextlib.suppress(ValueError, OSError):  # pragma: no cover - best effort
             reconfigure(encoding="utf-8")
-        except (ValueError, OSError):  # pragma: no cover - best effort
-            pass
 
-from .agent import DEFAULT_MODEL, BookingAgent
-from .booking_service import BookingService
-from .stub_model import StubModelClient
+# Imported AFTER the stdout reconfigure above so that any import-time output is
+# already UTF-8 safe on a cp1252 console.
+from .agent import DEFAULT_MODEL, BookingAgent  # noqa: E402
+from .booking_service import BookingService  # noqa: E402
+from .stub_model import StubModelClient  # noqa: E402
 
 # The exact conversation reproduced in the README's recorded transcript.
 DRY_RUN_SCRIPT = [
@@ -35,7 +37,7 @@ DRY_RUN_SCRIPT = [
 ]
 
 
-def _print_event(kind: str, payload) -> None:
+def _print_event(kind: str, payload: Any) -> None:
     if kind == "tool_use":
         print(f"    [tool call ] {payload['name']}({payload['input']})")
     elif kind == "tool_result":

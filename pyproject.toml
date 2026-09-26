@@ -19,10 +19,51 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7"]
+# Everything CI needs. Pinned only by lower bound: the checks must keep passing
+# as the tools move, and a frozen lockfile would hide that.
+dev = ["pytest>=7", "mypy>=1.8", "ruff>=0.5"]
 
 [project.scripts]
 booking-receptionist = "booking_receptionist.__main__:main"
+# Console entry point for the deterministic eval runner. Same code as
+# `python evals/run.py`; exit 0 = all cases pass, 1 = at least one failed.
+booking-evals = "booking_receptionist.evals_runner:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# ---------------------------------------------------------------------------
+# Tooling. All three run in CI (.github/workflows/ci.yml) with no secrets and
+# no network access from the application code — the eval runner and the whole
+# test suite go through the deterministic stub client.
+# ---------------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Lets `pytest` work straight from a clone, before `pip install -e .`.
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["src", "tests", "evals"]
+warn_unreachable = true
+pretty = false
+
+[[tool.mypy.overrides]]
+# The Anthropic SDK is only needed for the LIVE path; keep type checking green
+# in an environment that has not installed it.
+module = ["anthropic", "anthropic.*"]
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests", "evals"]
+
+[tool.ruff.lint]
+# Deliberately wider than ruff's default (E4/E7/E9 + F): import order (I),
+# likely bugs (B), comprehension smells (C4), modern syntax (UP), simplifiable
+# code (SIM) and ruff's own checks (RUF, which also flags stale `noqa`).
+select = ["E", "F", "W", "I", "B", "C4", "UP", "SIM", "RUF"]

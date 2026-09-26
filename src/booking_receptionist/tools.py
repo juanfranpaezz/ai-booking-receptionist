@@ -20,11 +20,12 @@ Design notes carried over from the production system:
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from .booking_service import BookingService
 
 # Ordered list — order is stable so the cached prefix stays byte-identical.
-TOOLS: list[dict] = [
+TOOLS: list[dict[str, Any]] = [
     {
         "name": "get_company_info",
         "description": (
@@ -136,7 +137,7 @@ ALLOWED_TOOL_NAMES = {t["name"] for t in TOOLS}
 
 def execute_tool(
     name: str,
-    tool_input: dict,
+    tool_input: dict[str, Any],
     service: BookingService,
     *,
     session_phone: str,
@@ -147,6 +148,7 @@ def execute_tool(
     any phone the model might pass — the model never controls whose data it reads
     or mutates. Returns JSON (the model reads it back as tool_result content).
     """
+    result: dict[str, Any] | list[dict[str, Any]]
     try:
         if name not in ALLOWED_TOOL_NAMES:
             # Defense in depth: the loop should never dispatch an unknown tool,
@@ -185,7 +187,7 @@ def execute_tool(
             result = {"error": "unknown_tool", "tool": name}
 
         return json.dumps(result, ensure_ascii=False, default=str)
-    except Exception as exc:  # noqa: BLE001 - never leak a stack trace to the model/user
+    except Exception:  # intentionally broad: never leak a stack trace to the model/user
         # Generic error: no internal details, table names, or stack traces escape.
         return json.dumps(
             {"error": "tool_execution_failed", "message": "No se pudo completar la acción."}

@@ -14,6 +14,7 @@ single scripted booking conversation; off-script inputs get a generic reply.
 from __future__ import annotations
 
 import json
+from typing import Any
 
 
 class StubModelClient:
@@ -25,6 +26,11 @@ class StubModelClient:
       after slots        -> end_turn (offer options, ask for a choice)
       user picks + name   -> tool_use create_appointment
       after create       -> end_turn (confirm the booking)
+
+    Two branches were ADDED on 2026-09-14 so that eval cases TC-06 and TC-07
+    have a scripted response at all — without them those two cases could not be
+    executed. Each is tagged `EVAL EXTENSION` below with the case it serves and
+    why it sits where it sits. Nothing pre-existing was removed or reordered.
     """
 
     def __init__(self) -> None:
@@ -35,7 +41,16 @@ class StubModelClient:
         self._toolu += 1
         return f"toolu_stub_{self._toolu:03d}"
 
-    def create_message(self, *, model, max_tokens, system, tools, messages, **_) -> dict:
+    def create_message(
+        self,
+        *,
+        model: str,
+        max_tokens: int,
+        system: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        messages: list[dict[str, Any]],
+        **_: Any,
+    ) -> dict[str, Any]:
         last = messages[-1]
 
         # If the last turn was tool results, decide the next step from them.
@@ -72,13 +87,54 @@ class StubModelClient:
                     f"Tu número de turno es {appt['appointment_id']}. ¡Nos vemos! 💪"
                 )
                 return _end_turn(text)
+            # EVAL EXTENSION (TC-06, added 2026-09-14): after listing the caller's
+            # own appointments, ask for an explicit confirmation and STOP. The
+            # scripted flow deliberately does NOT go on to cancel_appointment —
+            # TC-06 forbids that call, and the system prompt requires an explicit
+            # confirmation first. Placed before the generic fallback below, which
+            # is left untouched for every other tool.
+            if any(r.get("_tool") == "get_client_appointments" for r in results):
+                appointments = next(
+                    r["_data"] for r in results if r.get("_tool") == "get_client_appointments"
+                )
+                if appointments:
+                    text = (
+                        "Estos son los turnos a tu nombre: "
+                        + ", ".join(
+                            f"#{a['appointment_id']} {a['service_name']} "
+                            f"el {a['start'].replace('T', ' a las ')}"
+                            for a in appointments
+                        )
+                        + ". ¿Cuál querés cancelar? Confirmame y lo doy de baja."
+                    )
+                else:
+                    text = (
+                        "No encontré turnos activos a tu nombre. "
+                        "¿Querés que busquemos disponibilidad para reservar uno?"
+                    )
+                return _end_turn(text)
             return _end_turn("Listo. ¿Algo más en lo que te pueda ayudar?")
 
         # Otherwise it's a user text turn — react to its content.
         text = _last_user_text(messages).lower()
+        # EVAL EXTENSION (TC-06, added 2026-09-14): a cancellation intent must look
+        # the caller's own appointments up FIRST. Checked BEFORE the booking branch
+        # because "cancelar mi turno" also contains "turno" and would otherwise be
+        # routed into the booking flow.
+        if "cancelar" in text or "cancelo" in text or "dar de baja" in text:
+            return self._tool_use("get_client_appointments", {"client_name": "Cliente"})
         if "reservar" in text or "turno" in text or "reformer" in text or "clase" in text:
             # Kick off the booking flow by listing services first.
             return self._tool_use("get_services", {})
+        # EVAL EXTENSION (TC-07, added 2026-09-14): an availability question phrased
+        # in rioplatense slang ("¿tenés lugar para mañana?") never says "turno" or
+        # "clase", so it fell through to the generic greeting and reached no tool.
+        # Placed AFTER the booking branch so the scripted README conversation
+        # (which also says "grupal") still starts at get_services, unchanged.
+        if "lugar" in text or "disponib" in text or "hay para" in text:
+            return self._tool_use(
+                "get_available_slots", {"service_id": 2, "start_date": "2026-06-23"}
+            )
         if self._offered_slot_id is not None and (
             "me llamo" in text or "soy " in text or "nombre" in text or "perfecto" in text
         ):
@@ -93,7 +149,7 @@ class StubModelClient:
             "Puedo ayudarte a reservar, consultar o cancelar un turno. ¿Qué necesitás?"
         )
 
-    def _tool_use(self, name: str, tool_input: dict) -> dict:
+    def _tool_use(self, name: str, tool_input: dict[str, Any]) -> dict[str, Any]:
         return {
             "stop_reason": "tool_use",
             "content": [
@@ -106,7 +162,7 @@ class StubModelClient:
         }
 
 
-def _end_turn(text: str) -> dict:
+def _end_turn(text: str) -> dict[str, Any]:
     return {
         "stop_reason": "end_turn",
         "content": [{"type": "text", "text": text}],
@@ -117,20 +173,20 @@ def _end_turn(text: str) -> dict:
     }
 
 
-def _is_tool_result_turn(turn: dict) -> bool:
+def _is_tool_result_turn(turn: dict[str, Any]) -> bool:
     content = turn.get("content")
     return isinstance(content, list) and any(
         isinstance(b, dict) and b.get("type") == "tool_result" for b in content
     )
 
 
-def _tool_result_payloads(turn: dict) -> list[dict]:
+def _tool_result_payloads(turn: dict[str, Any]) -> list[dict[str, Any]]:
     """Parse each tool_result's JSON content; tag with the tool that produced it.
 
     We don't carry the tool name on the result block, so we infer it from the
     payload shape — fine for a deterministic stub.
     """
-    out = []
+    out: list[dict[str, Any]] = []
     for block in turn["content"]:
         if not (isinstance(block, dict) and block.get("type") == "tool_result"):
             continue
@@ -143,7 +199,7 @@ def _tool_result_payloads(turn: dict) -> list[dict]:
     return out
 
 
-def _infer_tool(data) -> str:
+def _infer_tool(data: Any) -> str:
     if isinstance(data, list):
         if data and "duration_min" in data[0]:
             return "get_services"
@@ -160,10 +216,11 @@ def _infer_tool(data) -> str:
     return "unknown"
 
 
-def _last_user_text(messages: list[dict]) -> str:
+def _last_user_text(messages: list[dict[str, Any]]) -> str:
     for turn in reversed(messages):
-        if turn["role"] == "user" and isinstance(turn.get("content"), str):
-            return turn["content"]
+        content = turn.get("content")
+        if turn["role"] == "user" and isinstance(content, str):
+            return content
     return ""
 
 
