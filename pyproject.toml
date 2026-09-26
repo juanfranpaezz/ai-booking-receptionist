@@ -9,7 +9,7 @@ description = "A Claude tool-use agent that books appointment slots — sanitize
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
-authors = [{ name = "Juan Francisco Páez" }]
+authors = [{ name = "Juan Francisco Paez" }]
 keywords = ["claude", "anthropic", "tool-use", "agent", "llm", "prompt-injection", "booking"]
 
 dependencies = [
