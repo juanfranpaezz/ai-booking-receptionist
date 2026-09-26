@@ -280,4 +280,4 @@ ai-booking-receptionist/
 
 ## License
 
-MIT. This is a personal portfolio extract of a pattern; it ships no proprietary code or data.
+Apache-2.0. See [LICENSE](LICENSE). This is a personal portfolio extract of a pattern; it ships no proprietary code or data.

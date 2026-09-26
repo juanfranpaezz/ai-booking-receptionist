@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "A Claude tool-use agent that books appointment slots — sanitized extract of a production WhatsApp AI receptionist."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 authors = [{ name = "Juan Francisco Páez" }]
 keywords = ["claude", "anthropic", "tool-use", "agent", "llm", "prompt-injection", "booking"]
 
