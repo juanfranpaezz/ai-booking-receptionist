@@ -215,9 +215,9 @@ This repo is a **pattern showcase**, not the product. Deliberately:
   and returns a non-zero exit code on any failure. **0 of the 7 are executed against the real
   model** — that path needs a key and costs money, so it is deliberately out of this extract and out
   of CI. Any end-to-end-against-Claude result is self-reported by the private production system in
-  its own results doc and is **not** claimed here. What runs green in this repo: 31 pytest tests
+  its own results doc and is **not** claimed here. What runs green in this repo: 34 pytest tests
   (7 pre-existing smoke tests + 7 parametrized eval cases + 14 tests that prove the eval grader
-  itself can return both PASS and FAIL + 3 tests that tie the dry-run summary to what really
+  itself can return both PASS and FAIL + 6 tests that tie the dry-run summary to what really
   happened), `mypy --strict`, and `ruff`.
 
 **Left out (product / infra, not pattern):**
@@ -255,7 +255,7 @@ python evals/run.py          # the 7 eval cases -> PASS/FAIL table, exit 0 / 1
 python evals/run.py --verbose  # same, plus each case's user message and reply
 booking-evals                # identical, via the installed console script
 
-pytest                       # 31 tests (see below)
+pytest                       # 34 tests (see below)
 mypy --strict                # 0 errors across src/, tests/ and evals/
 ruff check                   # 0 findings
 ```
@@ -264,9 +264,12 @@ What `pytest` covers: the 7 pre-existing smoke tests (loop books via tools, inje
 pre-model, detector fires both ways, sanitizer fences markers + is idempotent, ownership gate,
 admin tool not exposed), the 7 eval cases run as parametrized tests, 14 tests over the eval
 runner itself — every grading arm is shown returning **both** a pass and a failure, and the
-runner's exit code is shown to be both 0 and 1 — and 3 tests over the dry run's closing summary:
-it says the injection was blocked only when the guard fired **and** the model never received the
-message, and it exits 1 when the guard does not fire or when it fires but the agent does not stop.
+runner's exit code is shown to be both 0 and 1 — and 6 tests over the dry run's closing summary:
+with the real agent it says the injection was blocked and exits 0; it withholds that claim and
+exits 1 when the guard is disabled, and when the guard fires but the model is still called during
+the injection turn — with the injection forwarded verbatim, forwarded with a warning tag, sent with
+a prefix like every other message, or moved into the system prompt. The claim is decided by
+counting the model calls made during that turn (it needs zero), not by matching the message text.
 A checker only ever seen returning green is worth nothing.
 
 CI (`.github/workflows/ci.yml`) runs ruff, mypy `--strict`, pytest, the eval runner and the dry run
