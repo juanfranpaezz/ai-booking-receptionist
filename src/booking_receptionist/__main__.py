@@ -57,13 +57,49 @@ def _print_event(kind: str, payload: Any) -> None:
         print(f"    [warn]   loop hit the {payload}-iteration bound")
 
 
+class _RecordingModelClient:
+    """Wraps the stub model and records every user text it was actually sent.
+
+    The dry-run summary uses this to tell "the guard fired" apart from "the
+    message never reached the model": the second claim needs its own evidence.
+    """
+
+    def __init__(self, inner: StubModelClient) -> None:
+        self._inner = inner
+        self.user_texts_sent: set[str] = set()
+
+    def create_message(
+        self,
+        *,
+        model: str,
+        max_tokens: int,
+        system: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        messages: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        for turn in messages:
+            if turn.get("role") != "user":
+                continue
+            content = turn.get("content")
+            if isinstance(content, str):
+                self.user_texts_sent.add(content)
+            elif isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and isinstance(block.get("text"), str):
+                        self.user_texts_sent.add(block["text"])
+        return self._inner.create_message(
+            model=model, max_tokens=max_tokens, system=system, tools=tools, messages=messages
+        )
+
+
 def run_dry_run() -> int:
     print("=" * 72)
     print("AI Booking Receptionist — DRY RUN (stubbed model, no API key)")
     print("Mock business: Estudio Pilates Demo")
     print("=" * 72)
     # The summary must report what the guard actually did, not what it is meant
-    # to do: record every message the Layer-1 guard really blocked.
+    # to do: record every message the Layer-1 guard really blocked, and every
+    # message the model was really sent.
     blocked: list[str] = []
 
     def on_event(kind: str, payload: Any) -> None:
@@ -72,9 +108,10 @@ def run_dry_run() -> int:
         _print_event(kind, payload)
 
     service = BookingService()
+    model_client = _RecordingModelClient(StubModelClient())
     agent = BookingAgent(
         service=service,
-        model_client=StubModelClient(),
+        model_client=model_client,
         session_phone="+5491155550100",
         on_event=on_event,
     )
@@ -83,9 +120,19 @@ def run_dry_run() -> int:
         reply = agent.chat(user_msg)
         print(f"[Asistente] {reply}")
     print("\n" + "=" * 72)
-    if DRY_RUN_INJECTION not in blocked:
+    guard_fired = DRY_RUN_INJECTION in blocked
+    reached_model = DRY_RUN_INJECTION in model_client.user_texts_sent
+    if not guard_fired:
         print("Dry run FAILED — the injection attempt was NOT blocked: the Layer-1 guard")
-        print("did not fire on it, so it was passed on to the model.")
+        if reached_model:
+            print("did not fire on it, so it was passed to the model.")
+        else:
+            print("did not fire on it.")
+        print("=" * 72)
+        return 1
+    if reached_model:
+        print("Dry run FAILED — the Layer-1 guard fired on the injection attempt, but the")
+        print("agent did not stop: the message was still passed to the model.")
         print("=" * 72)
         return 1
     print("Dry run OK — the agentic loop executed real tool calls against the mock")

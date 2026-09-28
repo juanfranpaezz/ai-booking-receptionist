@@ -13,6 +13,7 @@ import pytest
 
 from booking_receptionist import __main__ as cli
 from booking_receptionist import agent as agent_module
+from booking_receptionist.injection_guard import is_injection_attempt
 
 GUARD_EVENT_LINE = "[guard]  injection detected"
 BLOCK_CLAIM = "injection attempt was blocked"
@@ -35,4 +36,24 @@ def test_dry_run_does_not_claim_block_when_guard_disabled(
     out = capsys.readouterr().out
     assert GUARD_EVENT_LINE not in out  # precondition: the guard really did not fire
     assert BLOCK_CLAIM not in out
+    assert exit_code != 0
+
+
+def test_dry_run_does_not_claim_block_when_agent_does_not_stop(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The guard fires and reports the event, but the agent ignores its own guard and
+    # still sends the message to the model (the `return SAFE_REPLY` is missing).
+    def chat_ignoring_guard(self: agent_module.BookingAgent, user_message: str) -> str:
+        if is_injection_attempt(user_message):
+            self._on_event("injection_blocked", user_message)
+        self.messages.append({"role": "user", "content": user_message})
+        return self._run_loop()
+
+    monkeypatch.setattr(agent_module.BookingAgent, "chat", chat_ignoring_guard)
+    exit_code = cli.run_dry_run()
+    out = capsys.readouterr().out
+    assert GUARD_EVENT_LINE in out  # precondition: the guard really did fire
+    assert BLOCK_CLAIM not in out
+    assert "passed to the model" in out
     assert exit_code != 0
