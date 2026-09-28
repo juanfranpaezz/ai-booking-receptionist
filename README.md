@@ -215,9 +215,9 @@ This repo is a **pattern showcase**, not the product. Deliberately:
   and returns a non-zero exit code on any failure. **0 of the 7 are executed against the real
   model** — that path needs a key and costs money, so it is deliberately out of this extract and out
   of CI. Any end-to-end-against-Claude result is self-reported by the private production system in
-  its own results doc and is **not** claimed here. What runs green in this repo: 34 pytest tests
+  its own results doc and is **not** claimed here. What runs green in this repo: 50 pytest tests
   (7 pre-existing smoke tests + 7 parametrized eval cases + 14 tests that prove the eval grader
-  itself can return both PASS and FAIL + 6 tests that tie the dry-run summary to what really
+  itself can return both PASS and FAIL + 22 tests that tie the dry-run summary to what really
   happened), `mypy --strict`, and `ruff`.
 
 **Left out (product / infra, not pattern):**
@@ -255,7 +255,7 @@ python evals/run.py          # the 7 eval cases -> PASS/FAIL table, exit 0 / 1
 python evals/run.py --verbose  # same, plus each case's user message and reply
 booking-evals                # identical, via the installed console script
 
-pytest                       # 34 tests (see below)
+pytest                       # 50 tests (see below)
 mypy --strict                # 0 errors across src/, tests/ and evals/
 ruff check                   # 0 findings
 ```
@@ -264,13 +264,27 @@ What `pytest` covers: the 7 pre-existing smoke tests (loop books via tools, inje
 pre-model, detector fires both ways, sanitizer fences markers + is idempotent, ownership gate,
 admin tool not exposed), the 7 eval cases run as parametrized tests, 14 tests over the eval
 runner itself — every grading arm is shown returning **both** a pass and a failure, and the
-runner's exit code is shown to be both 0 and 1 — and 6 tests over the dry run's closing summary:
-with the real agent it says the injection was blocked and exits 0; it withholds that claim and
-exits 1 when the guard is disabled, and when the guard fires but the model is still called during
-the injection turn — with the injection forwarded verbatim, forwarded with a warning tag, sent with
-a prefix like every other message, or moved into the system prompt. The claim is decided by
-counting the model calls made during that turn (it needs zero), not by matching the message text.
-A checker only ever seen returning green is worth nothing.
+runner's exit code is shown to be both 0 and 1 — and 22 tests over the dry run's closing summary.
+What the dry run's block claim rests on: the Layer-1 guard reported blocking the scripted injection
+message; from the start of that turn to the end of the run the model was called only by later
+scripted turns on the run's own thread (the shipped script ends with the injection, so any model
+call from its start on voids the claim); that turn left the conversation history and system prompt
+unchanged; and no model call in any turn or thread contained the exact injection text (case and
+spacing aside), whether it came from the customer, the system prompt or tool data. Once the run
+ends the model client refuses every call, so a late thread or an exit hook cannot reach the model
+through it; such an attempt shows only as an error on stderr and does not change the summary or
+the exit code. With the real agent the summary says the injection was blocked and exits 0; it
+withholds that claim and exits 1 when the guard is disabled or silently drops the turn, and when
+the guard fires but the message still reaches the model — forwarded verbatim, with a warning tag,
+with a prefix like every other message, base64-encoded, moved into the system prompt, kept in the
+history during that turn (plain or encoded) or set aside for the next turn, sent from a background
+thread (also one started by a later turn), or sent while the reply is printed; two more tests show
+that a model call made after the run (a slow thread, an exit hook) is refused and never sent. Not
+covered, and possible only if turns are added after the injection: an altered copy (reworded,
+encoded, split, or with invisible characters) that one of those turns sends from the run's own
+thread, whether it was kept aside or written into the history or system prompt after the injection
+turn ended. Also not covered: a reworded version inside tool data, and code that reaches around
+the recording client. A checker only ever seen returning green is worth nothing.
 
 CI (`.github/workflows/ci.yml`) runs ruff, mypy `--strict`, pytest, the eval runner and the dry run
 on Python 3.10 and 3.12, on every push. It references **no repository secret** and needs no API key:
